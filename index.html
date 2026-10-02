@@ -92,7 +92,7 @@
     </div>
     <p class="hint" id="hint"></p>
   </div>
-  <div id="status" role="status" aria-live="polite">Loading words.txt…</div>
+  <div id="status" role="status" aria-live="polite">Loading wordfreq.txt…</div>
   <ul id="results"></ul>
   <button type="button" class="more" id="more" hidden></button>
 </main>
@@ -105,7 +105,7 @@
         more = $('more'), hint = $('hint');
   const modeBtns = { filter: $('mode-filter'), length: $('mode-length') };
 
-  let words = [];
+  let words = [];              // [{ w: 'word', f: 0-100, o: opacity }], file order = frequency descending
   let mode = 'filter';
   let matches = [];
   let shown = 0;
@@ -140,7 +140,9 @@
     const end = Math.min(shown + PAGE, matches.length);
     for (let i = shown; i < end; i++) {
       const li = document.createElement('li');
-      li.textContent = matches[i];
+      li.textContent = matches[i].w;
+      li.title = 'frequency ' + matches[i].f;
+      li.style.opacity = matches[i].o;
       frag.appendChild(li);
     }
     list.appendChild(frag);
@@ -169,11 +171,11 @@
         setStatus('Invalid pattern: ' + e.message, true);
         return;
       }
-      matches = words.filter(w => re.test(w.toLowerCase()));
+      matches = words.filter(e => re.test(e.w.toLowerCase()));
     } else {
       const n = parseInt(raw, 10);
       if (!Number.isInteger(n) || n < 0) { setStatus('Length must be a whole number.', true); return; }
-      matches = words.filter(w => w.length === n);
+      matches = words.filter(e => e.w.length === n);
     }
 
     setStatus(matches.length === 0
@@ -182,16 +184,39 @@
     renderBatch();
   }
 
+  // Opacity runs from MIN_OPACITY (freq 0) to 1 (freq 100).
+  // Linear, so a word at freq 50 sits about halfway between.
+  const MIN_OPACITY = 0.3;
+  function opacityFor(f) {
+    return +(MIN_OPACITY + (1 - MIN_OPACITY) * (f / 100)).toFixed(3);
+  }
+
+  // Lines look like "word;23". Split on the LAST ';' and keep only the word part.
+  function parse(text) {
+    const out = [];
+    for (const line of text.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      const i = t.lastIndexOf(';');
+      const w = (i === -1 ? t : t.slice(0, i)).trim();
+      let f = i === -1 ? 0 : parseFloat(t.slice(i + 1));
+      if (!Number.isFinite(f)) f = 0;
+      f = Math.min(100, Math.max(0, f));
+      if (w) out.push({ w, f, o: opacityFor(f) });
+    }
+    return out;
+  }
+
   async function load() {
     try {
-      const res = await fetch('words.txt');
+      const res = await fetch('wordfreq.txt');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      words = text.split(/\s+/).filter(Boolean);
+      words = parse(text);
       go.disabled = false;
       setStatus(`Loaded ${words.length.toLocaleString()} words. Ready.`);
     } catch (e) {
-      setStatus('Could not load words.txt (' + e.message + '). Keep it next to this file and serve over http(s), not file://.', true);
+      setStatus('Could not load wordfreq.txt (' + e.message + '). Keep it next to this file and serve over http(s), not file://.', true);
     }
   }
 
