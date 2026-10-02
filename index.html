@@ -44,7 +44,7 @@
     border-radius: 8px;
     padding: 16px;
   }
-  .modes { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+  .modes { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
   .modes button {
     font: inherit; padding: 8px 18px; border: 0; background: transparent; color: var(--ink); cursor: pointer;
   }
@@ -68,10 +68,10 @@
   #status.error { color: var(--err); }
   #results {
     list-style: none; margin: 0; padding: 0;
-    columns: 160px; column-gap: 16px;
+    columns: 27ch; column-gap: 16px; /* 27ch fits the 25-letter max plus a little slack */
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  #results li { break-inside: avoid; padding: 1px 0; }
+  #results li { break-inside: avoid; padding: 1px 0; overflow-wrap: anywhere; }
   .more {
     margin-top: 14px; font: inherit; padding: 8px 14px; border-radius: 6px;
     border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer;
@@ -85,6 +85,8 @@
     <div class="modes" role="group" aria-label="Mode">
       <button type="button" id="mode-filter" aria-pressed="true">Filter</button>
       <button type="button" id="mode-length" aria-pressed="false">Length</button>
+      <button type="button" id="mode-includes" aria-pressed="false">Includes</button>
+      <button type="button" id="mode-soft" aria-pressed="false">Soft includes</button>
     </div>
     <div class="row">
       <input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="a**le" aria-label="Pattern">
@@ -103,7 +105,7 @@
   const $ = id => document.getElementById(id);
   const q = $('q'), go = $('go'), statusEl = $('status'), list = $('results'),
         more = $('more'), hint = $('hint');
-  const modeBtns = { filter: $('mode-filter'), length: $('mode-length') };
+  const modeBtns = { filter: $('mode-filter'), length: $('mode-length'), includes: $('mode-includes'), soft: $('mode-soft') };
 
   let words = [];              // [{ w: 'word', f: 0-100, o: opacity }], file order = frequency descending
   let mode = 'filter';
@@ -118,6 +120,14 @@
     length: {
       placeholder: '5',
       hint: 'Enter a number to list every word with exactly that many letters.',
+    },
+    includes: {
+      placeholder: 'spring',
+      hint: 'Words that contain these letters together, in this exact order, anywhere in the word.',
+    },
+    soft: {
+      placeholder: 'spring',
+      hint: 'Words containing these letters in order but not side by side, like <code>surprising</code> for <code>spring</code>. Words that contain the text directly (<code>springing</code>) are excluded.',
     },
   };
 
@@ -155,6 +165,15 @@
     }
   }
 
+  // true if every character of `needle` appears in `hay` in order (gaps allowed)
+  function isSubsequence(needle, hay) {
+    let i = 0;
+    for (let j = 0; j < hay.length && i < needle.length; j++) {
+      if (hay[j] === needle[i]) i++;
+    }
+    return i === needle.length;
+  }
+
   function run() {
     list.textContent = '';
     more.hidden = true;
@@ -172,6 +191,15 @@
         return;
       }
       matches = words.filter(e => re.test(e.w.toLowerCase()));
+    } else if (mode === 'includes') {
+      const needle = raw.toLowerCase();
+      matches = words.filter(e => e.w.toLowerCase().includes(needle));
+    } else if (mode === 'soft') {
+      const needle = raw.toLowerCase();
+      matches = words.filter(e => {
+        const w = e.w.toLowerCase();
+        return !w.includes(needle) && isSubsequence(needle, w);
+      });
     } else {
       const n = parseInt(raw, 10);
       if (!Number.isInteger(n) || n < 0) { setStatus('Length must be a whole number.', true); return; }
@@ -222,6 +250,8 @@
 
   modeBtns.filter.addEventListener('click', () => setMode('filter'));
   modeBtns.length.addEventListener('click', () => setMode('length'));
+  modeBtns.includes.addEventListener('click', () => setMode('includes'));
+  modeBtns.soft.addEventListener('click', () => setMode('soft'));
   go.addEventListener('click', run);
   more.addEventListener('click', renderBatch);
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && !go.disabled) run(); });
