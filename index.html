@@ -66,6 +66,9 @@
   .hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
   #status { margin: 18px 0 8px; color: var(--muted); font-size: .95rem; }
   #status.error { color: var(--err); }
+  .lenfilter { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+  .lenfilter[hidden] { display: none; }
+  .lenfilter input { flex: none; width: 5.5rem; font-size: .95rem; padding: 5px 8px; }
   #results {
     list-style: none; margin: 0; padding: 0;
     columns: 27ch; column-gap: 16px; /* 27ch fits the 25-letter max plus a little slack */
@@ -95,6 +98,12 @@
     <p class="hint" id="hint"></p>
   </div>
   <div id="status" role="status" aria-live="polite">Loading wordfreq.txt…</div>
+  <div class="lenfilter" id="lenfilter" hidden>
+    <span>Word length</span>
+    <input id="minlen" type="number" min="0" inputmode="numeric" placeholder="min" aria-label="Minimum word length">
+    <span>to</span>
+    <input id="maxlen" type="number" min="0" inputmode="numeric" placeholder="max" aria-label="Maximum word length">
+  </div>
   <ul id="results"></ul>
   <button type="button" class="more" id="more" hidden></button>
 </main>
@@ -104,12 +113,14 @@
   const PAGE = 2000;           // words rendered per batch, keeps huge result sets responsive
   const $ = id => document.getElementById(id);
   const q = $('q'), go = $('go'), statusEl = $('status'), list = $('results'),
-        more = $('more'), hint = $('hint');
+        more = $('more'), hint = $('hint'),
+        lenBox = $('lenfilter'), minLen = $('minlen'), maxLen = $('maxlen');
   const modeBtns = { filter: $('mode-filter'), length: $('mode-length'), includes: $('mode-includes'), soft: $('mode-soft') };
 
   let words = [];              // [{ w: 'word', f: 0-100, o: opacity }], file order = frequency descending
   let mode = 'filter';
   let matches = [];
+  let base = null;             // unfiltered results for includes/soft, so the length filter can re-apply live
   let shown = 0;
 
   const modes = {
@@ -137,6 +148,8 @@
     q.placeholder = modes[m].placeholder;
     hint.innerHTML = modes[m].hint;
     q.inputMode = m === 'length' ? 'numeric' : 'text';
+    lenBox.hidden = !(m === 'includes' || m === 'soft');
+    base = null;
     q.focus();
   }
 
@@ -177,7 +190,7 @@
   function run() {
     list.textContent = '';
     more.hidden = true;
-    matches = []; shown = 0;
+    matches = []; shown = 0; base = null;
     const raw = q.value.trim();
     if (!raw) { setStatus('Enter something to search.', true); return; }
 
@@ -206,9 +219,29 @@
       matches = words.filter(e => e.w.length === n);
     }
 
-    setStatus(matches.length === 0
+    if (mode === 'includes' || mode === 'soft') {
+      base = matches;
+      matches = lengthFiltered(base);
+    }
+    show();
+  }
+
+  // blank min/max = no bound
+  function lengthFiltered(arr) {
+    const lo = parseInt(minLen.value, 10), hi = parseInt(maxLen.value, 10);
+    if (isNaN(lo) && isNaN(hi)) return arr;
+    return arr.filter(e => (isNaN(lo) || e.w.length >= lo) && (isNaN(hi) || e.w.length <= hi));
+  }
+
+  function show() {
+    list.textContent = '';
+    more.hidden = true;
+    shown = 0;
+    let msg = matches.length === 0
       ? 'No matches.'
-      : `${matches.length.toLocaleString()} ${matches.length === 1 ? 'word' : 'words'}`);
+      : `${matches.length.toLocaleString()} ${matches.length === 1 ? 'word' : 'words'}`;
+    if (base && base.length !== matches.length) msg += ` (of ${base.length.toLocaleString()} before the length filter)`;
+    setStatus(msg);
     renderBatch();
   }
 
@@ -254,6 +287,13 @@
   modeBtns.soft.addEventListener('click', () => setMode('soft'));
   go.addEventListener('click', run);
   more.addEventListener('click', renderBatch);
+  for (const el of [minLen, maxLen]) {
+    el.addEventListener('input', () => {
+      if (!base) return;
+      matches = lengthFiltered(base);
+      show();
+    });
+  }
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && !go.disabled) run(); });
 
   setMode('filter');
